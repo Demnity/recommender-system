@@ -117,10 +117,14 @@ def predict_latent_factors(movies, users, ratings, predictions):
     vt = vt[0:k, :]
     print(u.shape, s.shape, vt.shape)
     predict_all = np.dot(np.dot(u, s), vt)
-    return predict_all
+    result = np.empty([len(predictions), 2])
 
-util_matrix_predict = predict_latent_factors(movies_description, users_description, ratings_description, predictions_description)
-print(util_matrix_predict[0:5])
+    for i, row in predictions.iterrows():
+        result[i] = [i + 1, predict_all[row['userID'] - 1, row['movieID'] - 1]]
+    return result
+
+# util_matrix_predict = predict_latent_factors(movies_description, users_description, ratings_description, predictions_description)
+# print(util_matrix_predict[0:5])
 
 #####
 ##
@@ -155,7 +159,7 @@ def predict_random(movies, users, ratings, predictions):
 #####    
 
 ## //!!\\ TO CHANGE by your prediction function
-predictions = predict_random(movies_description, users_description, ratings_description, predictions_description)
+predictions = predict_latent_factors(movies_description, users_description, ratings_description, predictions_description)
 
 # Save predictions, should be in the form 'list of tuples' or 'list of lists'
 with open(submission_file, 'w') as submission_writer:
