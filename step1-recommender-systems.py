@@ -109,7 +109,7 @@ def predict_collaborative_filtering(movies, users, ratings, predictions):
 
 def predict_latent_factors(movies, users, ratings, predictions):
     ## TO COMPLETE
-    k = 20
+    k = 10
     u, s, vt = np.linalg.svd(util_matrix)
     s = np.diag(s)
     s = s[0:k, 0:k]
@@ -120,7 +120,11 @@ def predict_latent_factors(movies, users, ratings, predictions):
     result = np.empty([len(predictions), 2])
 
     for i, row in predictions.iterrows():
-        result[i] = [i + 1, predict_all[row['userID'] - 1, row['movieID'] - 1]]
+        result[i] = [int(i + 1), predict_all[row['userID'] - 1, row['movieID'] - 1]]
+    # result = pd.DataFrame(result)
+    # print(result.head())
+    # result[[0]] = result[[0]].astype(int)
+    # print(result.head())
     return result
 
 # util_matrix_predict = predict_latent_factors(movies_description, users_description, ratings_description, predictions_description)
@@ -170,3 +174,7 @@ with open(submission_file, 'w') as submission_writer:
 
     # Writes it dowmn
     submission_writer.write(predictions)
+
+submission = pd.read_csv(submission_file, delimiter=',', names=['id', 'rating'], header=None)
+submission.iloc[1:,0] = submission.iloc[1:,0].astype(int)
+submission.to_csv('submission.csv', index=False)
