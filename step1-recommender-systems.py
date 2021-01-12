@@ -37,8 +37,6 @@ ratings_description = pd.read_csv(ratings_file, delimiter=';',
                                   dtype={'userID': 'int', 'movieID': 'int', 'rating': 'int'},
                                   names=['userID', 'movieID', 'rating'])
 predictions_description = pd.read_csv(predictions_file, delimiter=';', names=['userID', 'movieID'], header=None)
-print(users_description.shape)
-print(movies_description.shape)
 
 # Creating and saving the utility matrix as csv
 # df = pd.DataFrame(0, index=np.arange(1, users_description.shape[0] + 1),
@@ -108,24 +106,43 @@ def predict_collaborative_filtering(movies, users, ratings, predictions):
 #####
 
 def predict_latent_factors(movies, users, ratings, predictions):
-    ## TO COMPLETE
-    k = 5
-    u, s, vt = np.linalg.svd(util_matrix)
+    # find all the 0 entries
+    mask = util_matrix == 0
+    # mask all the 0 entries in the utility matrix
+    masked_arr = np.ma.masked_array(util_matrix, mask)
+    item_means = np.mean(masked_arr, axis=0)
+    # if an item doesn't have any ratings, default to 0
+    item_means = item_means.filled(0)
+    util_masked = masked_arr.filled(item_means)
+    x = np.tile(item_means, (util_masked.shape[0], 1))
+    # remove the per item average from all entries
+    # the above mentioned nan entries will be essentially zero now
+    util_masked = util_masked - x
+
+    k = 20
+    u, s, vt = np.linalg.svd(util_masked)
     s = np.diag(s)
     s = s[0:k, 0:k]
     u = u[:, 0:k]
     vt = vt[0:k, :]
     print(u.shape, s.shape, vt.shape)
-    predict_all = np.dot(np.dot(u, s), vt)
+    # remember to add the average to the output
+    predict_all = np.dot(np.dot(u, s), vt) + x
     result = np.empty([len(predictions), 2])
 
     for i, row in predictions.iterrows():
-        result[i] = [int(i + 1), predict_all[row['userID'] - 1, row['movieID'] - 1]]
+        output = predict_all[row['userID'] - 1, row['movieID'] - 1]
+        # if output is 0, it means that a movie is not rated by anyone, set the movie rating to user's avg rating
+        if output == 0:
+            result[i] = [i + 1, np.mean(predict_all[row['userID'] - 1, :])]
+        else:
+            result[i] = [i + 1, predict_all[row['userID'] - 1, row['movieID'] - 1]]
+    
     result = pd.DataFrame(result)
-    print(result.head())
     result[[0]] = result[[0]].astype(int)
     result.rename(columns={0: 'Id', 1: 'Rating'}, inplace=True)
     print(result.head())
+    print(np.where(result.isna()))
     return result
 
 #####
