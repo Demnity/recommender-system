@@ -48,52 +48,95 @@ def create_data_matrix(ratings):
     np.save('data_matrix.npy', data_matrix)
 
 
+# users-to-movies matrix
 saved_data_matrix = np.load('data_matrix.npy')
 
-print(predictions_description)
 #####
 ##
 ## COLLABORATIVE FILTERING
 ##
 #####
+np.seterr('raise')
 
 
 def cosine_similarity(vector_a, vector_b):
-    return np.dot(vector_a, vector_b) / (np.linalg.norm(vector_a) * np.linalg.norm(vector_b))
+    denominator = (np.linalg.norm(vector_a) * np.linalg.norm(vector_b))
+    if denominator == 0:
+        return 0
+    return np.dot(vector_a, vector_b) / denominator
 
 
-def create_user_user_matrix(m):
-    user_user_matrix = np.zeros((m.shape[0], m.shape[0]))
+def create_utility_matrix(m, file_name, similarity_function):
+    utility_matrix = np.zeros((m.shape[0], m.shape[0]))
 
-    #calculate similarity between each and every user
+    # calculate similarity between each and every row
     for i in range(m.shape[0]):
         for j in range(i, m.shape[0]):
             if i != j:
-                sim = cosine_similarity(m[i], m[j])
-                user_user_matrix[i, j] = sim
-                user_user_matrix[j, i] = sim
+                sim = similarity_function(m[i], m[j])
+                utility_matrix[i, j] = sim
+                utility_matrix[j, i] = sim
 
             if i == j:
-                user_user_matrix[i, j] = 1
+                utility_matrix[i, j] = 1
 
-    np.save('user_user_matrix_1.npy', user_user_matrix)
+    np.save(file_name, utility_matrix)
 
 
-user_user_matrix = np.load('user_user_matrix_1.npy')
+def normalize_data_matrix(data_matrix):
+    mask = data_matrix == 0
+    # mask all the 0 entries in the utility matrix
+    masked_arr = np.ma.masked_array(data_matrix, mask)
+    item_means = np.mean(masked_arr, axis=0)
+    # if an item doesn't have any ratings, default to 0
+    item_means = item_means.filled(0)
+    util_masked = masked_arr.filled(item_means)
+    x = np.tile(item_means, (util_masked.shape[0], 1))
+    # remove the per item average from all entries
+    # the above mentioned nan entries will be essentially zero now
+    util_masked = util_masked - x
+
+    return util_masked
+
+
+movies_to_user_matrix = saved_data_matrix.T
+
+normalized_data_matrix = normalize_data_matrix(saved_data_matrix)
+normalized_movies_to_user_matrix = normalized_data_matrix.T
+print(normalized_movies_to_user_matrix)
+# create_utility_matrix(saved_data_matrix, 'user_user_matrix_1.npy', cosine_similarity)
+# create_utility_matrix(movies_to_user_matrix, 'item_item_matrix.npy', cosine_similarity)
+# create_utility_matrix(normalized_movies_to_user_matrix, 'normalized_item_item_matrix.npy', cosine_similarity)
+
+# user_user_matrix = np.load('user_user_matrix_1.npy')
+item_item_matrix = np.load('item_item_matrix.npy')
+normalized_item_item_matrix = np.load('normalized_item_item_matrix.npy')
+
+print(normalized_item_item_matrix)
 
 
 # The index should be index of the matrix not of the ones given in the file (so before use should subtract by one
 # each index)
-def predict_one_rating(index_user, index_movie, k_neighbours, data_matrix):
-    similarities = user_user_matrix[index_user]
+def predict_one_rating(index_user, index_movie, k_neighbours, data_matrix, utility_matrix, mode):
+    main_index = ""
+    sub_index = ""
 
-    #sort according to similarity
+    if mode == "user":
+        current_index = index_user
+        sub_index = index_movie
+    else:
+        current_index = index_movie
+        sub_index = index_user
+
+    similarities = utility_matrix[current_index]
+
+    # sort according to similarity
     sorted_similarities = pd.DataFrame(similarities).sort_values(by=[0], ascending=False)
 
     nearest_neighbours = dict()
 
     for index, row in sorted_similarities.iterrows():
-        if index != index_user and data_matrix[index, index_movie] != 0 and len(nearest_neighbours) < k_neighbours:
+        if index != current_index and data_matrix[index, sub_index] != 0 and len(nearest_neighbours) < k_neighbours:
             nearest_neighbours[index] = row[0]
         if len(nearest_neighbours) >= k_neighbours:
             break
@@ -103,7 +146,7 @@ def predict_one_rating(index_user, index_movie, k_neighbours, data_matrix):
 
     for index, similarity in nearest_neighbours.items():
         similarities_sum += similarity
-        rating += similarity * saved_data_matrix[index, index_movie]
+        rating += similarity * data_matrix[index, sub_index]
 
     if similarities_sum != 0:
         rating /= similarities_sum
@@ -111,13 +154,19 @@ def predict_one_rating(index_user, index_movie, k_neighbours, data_matrix):
     return rating
 
 
-def predict_collaborative_filtering(movies, users, ratings, predictions):
+def predict_collaborative_filtering(movies, users, ratings, predictions, utility_matrix, mode, data_matrix):
     # TO COMPLETE
     result = np.empty([len(predictions), 2])
 
     for i, row in predictions.iterrows():
-        result[i] = [i + 1, predict_one_rating(row['userID'] - 1, row['movieID'] - 1, 10, saved_data_matrix)]
-        print(result[i])
+        result[i] = [i + 1, predict_one_rating(row['userID'] - 1, row['movieID'] - 1, 10,
+                                               data_matrix, utility_matrix, mode)]
+
+    result = pd.DataFrame(result)
+    result[[0]] = result[[0]].astype(int)
+    result.rename(columns={0: 'Id', 1: 'Rating'}, inplace=True)
+    print(result.head())
+    print(np.where(result.isna()))
     return result
 
 
@@ -158,23 +207,22 @@ def predict_random(movies, users, ratings, predictions):
 
     return [[idx, randint(1, 5)] for idx in range(1, number_predictions + 1)]
 
+####
+#
+# SAVE RESULTS
+#
+####
 
-#####
-##
-## SAVE RESULTS
-##
-#####    
-
-## //!!\\ TO CHANGE by your prediction function
-predictions = predict_collaborative_filtering(movies_description, users_description, ratings_description, predictions_description)
-
-
+# //!!\\ TO CHANGE by your prediction function
+# predictions = predict_collaborative_filtering(movies_description, users_description, ratings_description,
+#                                               predictions_description, normalized_item_item_matrix, "item", movies_to_user_matrix)
+# predictions.to_csv('./data/submission.csv', index=False)
 # Save predictions, should be in the form 'list of tuples' or 'list of lists'
-with open(submission_file, 'w') as submission_writer:
-    # Formates data
-    predictions = [map(str, row) for row in predictions]
-    predictions = [','.join(row) for row in predictions]
-    predictions = 'Id,Rating\n' + '\n'.join(predictions)
-
-    # Writes it dowmn
-    submission_writer.write(predictions)
+# with open(submission_file, 'w') as submission_writer:
+#     # Formates data
+#     predictions = [map(str, row) for row in predictions]
+#     predictions = [','.join(row) for row in predictions]
+#     predictions = 'Id,Rating\n' + '\n'.join(predictions)
+#
+#     # Writes it dowmn
+#     submission_writer.write(predictions)
