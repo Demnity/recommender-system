@@ -38,7 +38,12 @@ ratings_description = pd.read_csv(ratings_file, delimiter=';',
                                   names=['userID', 'movieID', 'rating'])
 predictions_description = pd.read_csv(predictions_file, delimiter=';', names=['userID', 'movieID'], header=None)
 
-# Creating and saving the utility matrix as csv
+#####
+##
+## CREATING UTILITY MATRIX AND SAVE AS CSV
+##
+#####
+
 # df = pd.DataFrame(0, index=np.arange(1, users_description.shape[0] + 1),
 #                   columns=np.arange(1, movies_description.shape[0] + 1))
 # for i, row in ratings_description.iterrows():
@@ -50,47 +55,6 @@ util_matrix.columns = util_matrix.columns.astype(int)
 print(util_matrix.shape)
 print(util_matrix.head())
 print(util_matrix.loc[1, 1])
-
-# def create_data_matrix(ratings):
-#     data_matrix = np.zeros((6040, 3706))
-#     for i, row in ratings.iterrows():
-#         data_matrix[row['userID'] - 1, row['movieID'] - 1] = row['rating']
-#     np.save('data_matrix.npy', data_matrix)
-#
-#
-# saved_data_matrix = np.load('data_matrix.npy')
-
-
-#####
-##
-## COLLABORATIVE FILTERING
-##
-#####
-
-
-# def cosine_similarity(vector_a, vector_b):
-#     return np.dot(vector_a, vector_b) / (np.linalg.norm(vector_a) * np.linalg.norm(vector_b))
-#
-#
-# def create_user_user_matrix(m):
-#     user_user_matrix = np.zeros((m.shape[0], m.shape[0]))
-#
-#     for i in range(m.shape[0]):
-#         for j in range(i, m.shape[0]):
-#             if i != j:
-#                 sim = cosine_similarity(m[i], m[j])
-#                 user_user_matrix[i, j] = sim
-#                 user_user_matrix[j, i] = sim
-#
-#             if i == j:
-#                 user_user_matrix[i, j] = 1
-#
-#     np.save('user_user_matrix_1.npy', user_user_matrix)
-#
-#
-# user_user_matrix_1 = np.load('user_user_matrix_1.npy')
-#
-# print(user_user_matrix_1)
 
 
 def predict_collaborative_filtering(movies, users, ratings, predictions):
@@ -119,7 +83,7 @@ def predict_latent_factors(movies, users, ratings, predictions):
     # the above mentioned nan entries will be essentially zero now
     util_masked = util_masked - x
 
-    k = 20
+    k = 16
     u, s, vt = np.linalg.svd(util_masked)
     s = np.diag(s)
     s = s[0:k, 0:k]
@@ -137,13 +101,14 @@ def predict_latent_factors(movies, users, ratings, predictions):
             result[i] = [i + 1, np.mean(predict_all[row['userID'] - 1, :])]
         else:
             result[i] = [i + 1, predict_all[row['userID'] - 1, row['movieID'] - 1]]
-    
+
     result = pd.DataFrame(result)
     result[[0]] = result[[0]].astype(int)
     result.rename(columns={0: 'Id', 1: 'Rating'}, inplace=True)
     print(result.head())
     print(np.where(result.isna()))
     return result
+
 
 #####
 ##
@@ -153,8 +118,78 @@ def predict_latent_factors(movies, users, ratings, predictions):
 
 def predict_final(movies, users, ratings, predictions):
     ## TO COMPLETE
+    # num of latent factors
+    k = 10
 
-    pass
+    U = np.ones((util_matrix.shape[0], k))
+    V = np.ones((k, util_matrix.shape[1]))
+
+    # make all 0 entries into NaN
+    util_matrix[util_matrix == 0] = np.nan
+
+    # num of times you change the non-zero element in U and V
+    times = 1
+
+    for i in range(0, times):
+        decompose_matrix_U(U, V)
+        decompose_matrix_V(U, V)
+
+    predict_all = np.dot(U, V)
+    result = np.empty([len(predictions), 2])
+
+    for i, row in predictions.iterrows():
+        output = predict_all[row['userID'] - 1, row['movieID'] - 1]
+        # if output is 0, it means that a movie is not rated by anyone, set the movie rating to user's avg rating
+        if output == 0:
+            result[i] = [i + 1, np.mean(predict_all[row['userID'] - 1, :])]
+        else:
+            result[i] = [i + 1, predict_all[row['userID'] - 1, row['movieID'] - 1]]
+
+    result = pd.DataFrame(result)
+    result[[0]] = result[[0]].astype(int)
+    result.rename(columns={0: 'Id', 1: 'Rating'}, inplace=True)
+    print(result.head())
+    print(np.where(result.isna()))
+    return result
+
+
+def decompose_matrix_U(U, V):
+    for r in range(0, U.shape[0]):
+        for s in range(0, V.shape[0]):
+            m_array = np.array(util_matrix.iloc[r, :])
+            v_array = np.array(V[s, :])
+            v_array[np.isnan(m_array)] = np.nan
+            # print m_array
+            # print v_array
+            denominator = np.nansum(np.square(v_array))
+            # print denominator
+            sum_array = np.matmul(U[r, :], V[:]) - (U[r, s] * V[s, :])
+            # # print sum_array
+            numerator = np.nansum(V[s, :] * (m_array - sum_array))
+            # numerator = np.nansum(V[s, :] * sum)
+            # print numerator
+            U[r, s] = float(numerator) / denominator
+
+    return
+
+
+def decompose_matrix_V(U, V):
+    for s in range(0, V.shape[1]):
+        for r in range(0, U.shape[1]):
+            m_array = np.array(util_matrix.iloc[:, s])
+            u_array = np.array(U[:, r])
+            u_array[np.isnan(m_array)] = np.nan
+            # print m_array
+            # print v_array
+            denominator = np.nansum(np.square(u_array))
+            # print denominator
+            sum_array = np.matmul(U[:], V[:, s]) - (V[r, s] * U[:, r])
+            # print sum_array
+            numerator = np.nansum(U[:, r] * (m_array - sum_array))
+            # print numerator
+            V[r, s] = float(numerator) / denominator
+
+    return
 
 
 #####
@@ -178,18 +213,8 @@ def predict_random(movies, users, ratings, predictions):
 #####    
 
 ## //!!\\ TO CHANGE by your prediction function
-predictions = predict_latent_factors(movies_description, users_description, ratings_description, predictions_description)
+predictions = predict_final(movies_description, users_description, ratings_description,
+                                     predictions_description)
+# Save predictions
 predictions.to_csv('./data/submission.csv', index=False)
 # Save predictions, should be in the form 'list of tuples' or 'list of lists'
-# with open(submission_file, 'w') as submission_writer:
-#     # Formates data
-#     predictions = [map(str, row) for row in predictions]
-#     predictions = [','.join(row) for row in predictions]
-#     predictions = 'Id,Rating\n' + '\n'.join(predictions)
-#
-#     # Writes it dowmn
-#     submission_writer.write(predictions)
-
-# submission = pd.read_csv(submission_file, delimiter=',', names=['id', 'rating'], header=None)
-# submission.iloc[1:,0] = submission.iloc[1:,0].astype(int)
-# submission.to_csv('submission.csv', index=False)
