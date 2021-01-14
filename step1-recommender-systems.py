@@ -118,6 +118,18 @@ def predict_latent_factors(movies, users, ratings, predictions):
 
 def predict_final(movies, users, ratings, predictions):
     ## TO COMPLETE
+    # # find all the 0 entries
+    # mask = util_matrix == 0
+    # # mask all the 0 entries in the utility matrix
+    # masked_arr = np.ma.masked_array(util_matrix, mask)
+    # item_means = np.mean(masked_arr, axis=0)
+    # # if an item doesn't have any ratings, default to 0
+    # item_means = item_means.filled(0)
+    # util_masked = masked_arr.filled(item_means)
+    # x = np.tile(item_means, (util_masked.shape[0], 1))
+    # # remove the per item average from all entries
+    # # the above mentioned nan entries will be essentially zero now
+    # util_masked = util_masked - x
     # num of latent factors
     k = 10
 
@@ -128,11 +140,11 @@ def predict_final(movies, users, ratings, predictions):
     util_matrix[util_matrix == 0] = np.nan
 
     # num of times you change the non-zero element in U and V
-    times = 1
+    times = 5
 
     for i in range(0, times):
-        decompose_matrix_U(U, V)
-        decompose_matrix_V(U, V)
+        decompose_matrix_U(U, V, util_matrix)
+        decompose_matrix_V(U, V, util_matrix)
 
     predict_all = np.dot(U, V)
     result = np.empty([len(predictions), 2])
@@ -153,10 +165,10 @@ def predict_final(movies, users, ratings, predictions):
     return result
 
 
-def decompose_matrix_U(U, V):
+def decompose_matrix_U(U, V, util_masked):
     for r in range(0, U.shape[0]):
         for s in range(0, V.shape[0]):
-            m_array = np.array(util_matrix.iloc[r, :])
+            m_array = np.array(util_masked.iloc[r, :])
             v_array = np.array(V[s, :])
             v_array[np.isnan(m_array)] = np.nan
             # print m_array
@@ -173,18 +185,18 @@ def decompose_matrix_U(U, V):
     return
 
 
-def decompose_matrix_V(U, V):
+def decompose_matrix_V(U, V, util_masked):
     for s in range(0, V.shape[1]):
         for r in range(0, U.shape[1]):
-            m_array = np.array(util_matrix.iloc[:, s])
+            m_array = np.array(util_masked.iloc[:, s])
             u_array = np.array(U[:, r])
             u_array[np.isnan(m_array)] = np.nan
             # print m_array
             # print v_array
             denominator = np.nansum(np.square(u_array))
-            # if denominator == 0:
-            #     V[r, s] = 0
-            #     return
+            if denominator == 0:
+                V[r, s] = 0
+                continue
             # print denominator
             sum_array = np.matmul(U[:], V[:, s]) - (V[r, s] * U[:, r])
             # print sum_array
