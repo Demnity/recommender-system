@@ -182,6 +182,9 @@ def decompose_matrix_V(U, V):
             # print m_array
             # print v_array
             denominator = np.nansum(np.square(u_array))
+            # if denominator == 0:
+            #     V[r, s] = 0
+            #     return
             # print denominator
             sum_array = np.matmul(U[:], V[:, s]) - (V[r, s] * U[:, r])
             # print sum_array
