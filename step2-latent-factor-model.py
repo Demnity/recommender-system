@@ -196,12 +196,10 @@ def matrix_factorization(R, P, Q, K, item_means, user_means, global_mean, steps=
         for i in range(P.shape[0]):
             for j in range(Q.shape[1]):
                 if R[i][j] > 0:
-                    eij = R[i][j] - np.dot(P[i, :], Q[:, j]) - global_mean - user_means[i] - item_means[j]
+                    eij = R[i][j] - np.dot(P[i, :], Q[:, j])
                     for k in range(K):
-                        P[i][k] = P[i][k] + alpha * (2 * eij * Q[k][j]
-                                                     - 2 * beta * (P[i][k] + user_means[i] + item_means[j]))
-                        Q[k][j] = Q[k][j] + alpha * (2 * eij * P[i][k]
-                                                     - 2 * beta * (Q[k][j] + user_means[i] + item_means[j]))
+                        P[i][k] = P[i][k] + alpha * (2 * eij * Q[k][j] - 2 * beta * P[i][k])
+                        Q[k][j] = Q[k][j] + alpha * (2 * eij * P[i][k] - 2 * beta * Q[k][j])
         e = 0
         for i in range(len(R)):
             for j in range(len(R[i])):
