@@ -137,9 +137,29 @@ def decompose_matrix_V(U, V, util_masked, alpha):
 
 ###########################################################################
 #                   U-V DECOMPOSITION USING BATCH GRADIENT
-#                         DESCENT WITH REGULARIZATION
+#                 DESCENT WITH REGULARIZATION AND GLOBAL BIAS
+
+def find_bias(matrix):
+    # find all the 0 entries
+    mask = matrix == 0
+
+    # mask all the 0 entries in the utility matrix
+    masked_arr = np.ma.masked_array(matrix, mask)
+    item_means = np.mean(masked_arr, axis=0)
+    user_means = np.mean(masked_arr, axis=1)
+    global_mean = np.mean(masked_arr)
+
+    # if an item doesn't have any ratings, default to 0
+    item_means = item_means.filled(0)
+    user_means = user_means.filled(0)
+
+    return item_means, user_means, global_mean
+
 
 def predict_batch_gradient_descent(predictions):
+    item_means, user_means, global_mean = find_bias(util_matrix)
+    print(item_means, user_means, global_mean)
+
     # num of latent factors
     k = 9
 
@@ -149,7 +169,7 @@ def predict_batch_gradient_descent(predictions):
     # make all 0 entries into NaN
     # util_masked[util_masked == 0] = np.nan
 
-    U, V = matrix_factorization(util_masked, U, V, k)
+    U, V = matrix_factorization(util_masked, U, V, k, item_means, user_means, global_mean)
 
     predict_all = np.dot(U, V)
     result = np.empty([len(predictions), 2])
@@ -171,22 +191,24 @@ def predict_batch_gradient_descent(predictions):
     return result
 
 
-def matrix_factorization(R, P, Q, K, steps=5000, alpha=0.0002, beta=0.02):
+def matrix_factorization(R, P, Q, K, item_means, user_means, global_mean, steps=5000, alpha=0.0002, beta=0.01):
     for step in range(steps):
         for i in range(P.shape[0]):
             for j in range(Q.shape[1]):
                 if R[i][j] > 0:
-                    eij = R[i][j] - np.dot(P[i, :], Q[:, j])
+                    eij = R[i][j] - np.dot(P[i, :], Q[:, j]) - global_mean - user_means[i] - item_means[j]
                     for k in range(K):
-                        P[i][k] = P[i][k] + alpha * (2 * eij * Q[k][j] - beta * P[i][k])
-                        Q[k][j] = Q[k][j] + alpha * (2 * eij * P[i][k] - beta * Q[k][j])
+                        P[i][k] = P[i][k] + alpha * (2 * eij * Q[k][j]
+                                                     - 2 * beta * (P[i][k] + user_means[i] + item_means[j]))
+                        Q[k][j] = Q[k][j] + alpha * (2 * eij * P[i][k]
+                                                     - 2 * beta * (Q[k][j] + user_means[i] + item_means[j]))
         e = 0
         for i in range(len(R)):
             for j in range(len(R[i])):
                 if R[i][j] > 0:
                     e = e + pow(R[i][j] - np.dot(P[i, :], Q[:, j]), 2)
                     for k in range(K):
-                        e = e + (beta / 2) * (pow(P[i][k], 2) + pow(Q[k][j], 2))
+                        e = e + beta * (pow(P[i][k], 2) + pow(Q[k][j], 2))
         if e < 0.001:
             break
     return P, Q
