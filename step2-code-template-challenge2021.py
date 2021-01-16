@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 from random import randint
 
+
 # -*- coding: utf-8 -*-
 """
 FRAMEWORK FOR DATAMINING CLASS

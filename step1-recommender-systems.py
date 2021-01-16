@@ -50,7 +50,9 @@ def create_data_matrix(ratings):
 
 # users-to-movies matrix
 saved_data_matrix = np.load('data_matrix.npy')
+overall_mean = saved_data_matrix[np.nonzero(saved_data_matrix)].mean()
 
+print(overall_mean)
 #####
 ##
 ## COLLABORATIVE FILTERING
@@ -108,27 +110,25 @@ print(normalized_movies_to_user_matrix)
 # create_utility_matrix(movies_to_user_matrix, 'item_item_matrix.npy', cosine_similarity)
 # create_utility_matrix(normalized_movies_to_user_matrix, 'normalized_item_item_matrix.npy', cosine_similarity)
 
-# user_user_matrix = np.load('user_user_matrix_1.npy')
+user_user_matrix = np.load('user_user_matrix_1.npy')
 item_item_matrix = np.load('item_item_matrix.npy')
 normalized_item_item_matrix = np.load('normalized_item_item_matrix.npy')
 
+print(user_user_matrix)
+
+print(item_item_matrix)
+
 print(normalized_item_item_matrix)
 
+def calculate_base_line(global_mean, user, movie):
+    user_deviation = np.mean(user, axis=0) - global_mean
+    movie_deviation = np.mean(movie, axis=0) - global_mean
 
-# The index should be index of the matrix not of the ones given in the file (so before use should subtract by one
-# each index)
-def predict_one_rating(index_user, index_movie, k_neighbours, data_matrix, utility_matrix, mode):
-    main_index = ""
-    sub_index = ""
+    return global_mean + user_deviation + movie_deviation
 
-    if mode == "user":
-        current_index = index_user
-        sub_index = index_movie
-    else:
-        current_index = index_movie
-        sub_index = index_user
 
-    similarities = utility_matrix[current_index]
+def find_k_nearest_neighbours(data_matrix, utility_matrix, row_index, column_index, k_neighbours):
+    similarities = utility_matrix[row_index]
 
     # sort according to similarity
     sorted_similarities = pd.DataFrame(similarities).sort_values(by=[0], ascending=False)
@@ -136,20 +136,52 @@ def predict_one_rating(index_user, index_movie, k_neighbours, data_matrix, utili
     nearest_neighbours = dict()
 
     for index, row in sorted_similarities.iterrows():
-        if index != current_index and data_matrix[index, sub_index] != 0 and len(nearest_neighbours) < k_neighbours:
+        if index != row_index and data_matrix[index, column_index] != 0 and len(nearest_neighbours) < k_neighbours:
             nearest_neighbours[index] = row[0]
         if len(nearest_neighbours) >= k_neighbours:
             break
 
+    return nearest_neighbours
+
+
+# The index should be index of the matrix not of the ones given in the file (so before use should subtract by one
+# each index)
+def predict_one_rating(index_user, index_movie, k_neighbours, data_matrix, utility_matrix, mode, baseline):
+    row_index = ""
+    column_index = ""
+
+    if mode == "user":
+        row_index = index_user
+        column_index = index_movie
+    elif mode == "item":
+        row_index = index_movie
+        column_index = index_user
+
+    nearest_neighbours = find_k_nearest_neighbours(data_matrix, utility_matrix, row_index, column_index, k_neighbours)
+
     similarities_sum = 0
     rating = 0
 
-    for index, similarity in nearest_neighbours.items():
-        similarities_sum += similarity
-        rating += similarity * data_matrix[index, sub_index]
+    if baseline == True and mode == "item":
+        movie_to_predict = data_matrix[index_movie]
+        user_to_predict = data_matrix[:, index_user]
+
+        for index, similarity in nearest_neighbours.items():
+            similarities_sum += similarity
+            current_movie = data_matrix[index]
+
+            rating += similarity * (data_matrix[index, column_index]
+                                    - calculate_base_line(overall_mean, user_to_predict, current_movie))
+
+    else:
+        for index, similarity in nearest_neighbours.items():
+            similarities_sum += similarity
+            rating += similarity * data_matrix[index, column_index]
 
     if similarities_sum != 0:
         rating /= similarities_sum
+
+    rating += calculate_base_line(overall_mean, user_to_predict, movie_to_predict)
 
     return rating
 
@@ -159,8 +191,8 @@ def predict_collaborative_filtering(movies, users, ratings, predictions, utility
     result = np.empty([len(predictions), 2])
 
     for i, row in predictions.iterrows():
-        result[i] = [i + 1, predict_one_rating(row['userID'] - 1, row['movieID'] - 1, 10,
-                                               data_matrix, utility_matrix, mode)]
+        result[i] = [i + 1, predict_one_rating(row['userID'] - 1, row['movieID'] - 1, 13,
+                                               data_matrix, utility_matrix, mode, True)]
 
     result = pd.DataFrame(result)
     result[[0]] = result[[0]].astype(int)
@@ -207,6 +239,7 @@ def predict_random(movies, users, ratings, predictions):
 
     return [[idx, randint(1, 5)] for idx in range(1, number_predictions + 1)]
 
+
 ####
 #
 # SAVE RESULTS
@@ -214,15 +247,7 @@ def predict_random(movies, users, ratings, predictions):
 ####
 
 # //!!\\ TO CHANGE by your prediction function
-# predictions = predict_collaborative_filtering(movies_description, users_description, ratings_description,
-#                                               predictions_description, normalized_item_item_matrix, "item", movies_to_user_matrix)
+# predictions = predict_collaborative_filtering(movies_description, users_description,
+#                                               ratings_description, predictions_description,
+#                                               normalized_item_item_matrix, "item", movies_to_user_matrix)
 # predictions.to_csv('./data/submission.csv', index=False)
-# Save predictions, should be in the form 'list of tuples' or 'list of lists'
-# with open(submission_file, 'w') as submission_writer:
-#     # Formates data
-#     predictions = [map(str, row) for row in predictions]
-#     predictions = [','.join(row) for row in predictions]
-#     predictions = 'Id,Rating\n' + '\n'.join(predictions)
-#
-#     # Writes it dowmn
-#     submission_writer.write(predictions)
